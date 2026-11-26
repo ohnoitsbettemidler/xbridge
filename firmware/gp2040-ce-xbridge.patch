@@ -1,0 +1,618 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fedf9cc..690982f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -308,6 +308,7 @@ src/addons/spi_analog_ads1256.cpp
+ src/addons/gamepad_usb_host.cpp
+ src/addons/gamepad_usb_host_listener.cpp
+ src/addons/tg16_input.cpp
++src/addons/pilink.cpp
+ src/animationstation/animation.cpp
+ src/animationstation/animationstation.cpp
+ src/animationstation/effects/burstcolor.cpp
+@@ -356,6 +357,8 @@ WiiExtension
+ SNESpad
+ pico_mbedtls
+ nanopb
++pico_i2c_slave
++hardware_i2c
+ )
+ 
+ target_include_directories(${PROJECT_NAME} PUBLIC
+diff --git a/configs/XBridgeFeather/BoardConfig.h b/configs/XBridgeFeather/BoardConfig.h
+new file mode 100644
+index 0000000..437a2a4
+--- /dev/null
++++ b/configs/XBridgeFeather/BoardConfig.h
+@@ -0,0 +1,80 @@
++/*
++ * SPDX-License-Identifier: MIT
++ *
++ * XBridge: Adafruit Feather RP2040 with USB Type A Host as an Xbox One /
++ * Series X|S controller, driven by a Raspberry Pi over I2C (STEMMA QT port).
++ *
++ *   USB-C          -> Xbox (the board appears as a wired Xbox controller)
++ *   USB-A          -> licensed auth adapter (e.g. Mayflash Magic-X in Xbox mode)
++ *   STEMMA QT      -> Raspberry Pi (GND, SDA, SCL only - red wire unused)
++ *   Red LED (D13)  -> solid = Pi data arriving, slow blink = waiting for Pi
++ */
++
++#ifndef PICO_BOARD_CONFIG_H_
++#define PICO_BOARD_CONFIG_H_
++
++#include "enums.pb.h"
++#include "class/hid/hid.h"
++
++#define BOARD_CONFIG_LABEL "XBridge (Feather RP2040 USB Host)"
++
++// No physical buttons on this build: every input comes from the Pi.
++// Pins used by the Pi link and status LED are reserved for the add-on.
++#define GPIO_PIN_02 GpioAction::ASSIGNED_TO_ADDON   // STEMMA QT SDA (I2C1)
++#define GPIO_PIN_03 GpioAction::ASSIGNED_TO_ADDON   // STEMMA QT SCL (I2C1)
++#define GPIO_PIN_13 GpioAction::ASSIGNED_TO_ADDON   // red LED
++
++// Keyboard-mode mapping (GP2040-CE requires these; unused in Xbox mode)
++#define KEY_DPAD_UP     HID_KEY_ARROW_UP
++#define KEY_DPAD_DOWN   HID_KEY_ARROW_DOWN
++#define KEY_DPAD_RIGHT  HID_KEY_ARROW_RIGHT
++#define KEY_DPAD_LEFT   HID_KEY_ARROW_LEFT
++#define KEY_BUTTON_B1   HID_KEY_SHIFT_LEFT
++#define KEY_BUTTON_B2   HID_KEY_Z
++#define KEY_BUTTON_R2   HID_KEY_X
++#define KEY_BUTTON_L2   HID_KEY_V
++#define KEY_BUTTON_B3   HID_KEY_CONTROL_LEFT
++#define KEY_BUTTON_B4   HID_KEY_ALT_LEFT
++#define KEY_BUTTON_R1   HID_KEY_SPACE
++#define KEY_BUTTON_L1   HID_KEY_C
++#define KEY_BUTTON_S1   HID_KEY_5
++#define KEY_BUTTON_S2   HID_KEY_1
++#define KEY_BUTTON_L3   HID_KEY_EQUAL
++#define KEY_BUTTON_R3   HID_KEY_MINUS
++#define KEY_BUTTON_A1   HID_KEY_9
++#define KEY_BUTTON_A2   HID_KEY_F2
++#define KEY_BUTTON_FN   -1
++
++// USB-A host port for the authentication adapter
++#define USB_PERIPHERAL_ENABLED 1
++#define USB_PERIPHERAL_PIN_DPLUS 16                 // D- is GPIO17
++#define USB_PERIPHERAL_PIN_ORDER 0
++#define USB_PERIPHERAL_PIN_5V 18                    // 5V boost enable
++
++// Always start as an Xbox One / Series controller
++#define DEFAULT_INPUT_MODE INPUT_MODE_XBONE
++#define DEFAULT_FORCED_SETUP_MODE FORCED_SETUP_MODE_LOCK_MODE_SWITCH
++
++// Button-combo shortcuts (turbo, D-pad mode changes etc.) are off so no
++// keyboard combination can change how the pad behaves mid-game.
++#define DEFAULT_LOCK_HOTKEYS true
++
++// Nothing else plugged into the host port, and no display or LEDs
++#define KEYBOARD_HOST_ENABLED 0
++#define GAMEPAD_USB_HOST_ENABLED 0
++#define HAS_I2C_DISPLAY 0
++#define I2C0_ENABLED 0
++#define I2C1_ENABLED 0
++#define BOARD_LEDS_PIN -1
++
++// The Pi link itself
++#define PI_LINK_ENABLED 1
++#define PI_LINK_PIN_SDA 2
++#define PI_LINK_PIN_SCL 3
++#define PI_LINK_I2C_BLOCK i2c1
++#define PI_LINK_ADDRESS 0x42
++#define PI_LINK_PIN_LED 13
++#define PI_LINK_TIMEOUT_MS 100
++#define PI_LINK_PIN_USB_5V_EN 18
++
++#endif
+diff --git a/configs/XBridgeFeather/XBridgeFeather.cmake b/configs/XBridgeFeather/XBridgeFeather.cmake
+new file mode 100644
+index 0000000..e9fae60
+--- /dev/null
++++ b/configs/XBridgeFeather/XBridgeFeather.cmake
+@@ -0,0 +1,2 @@
++set(PICO_BOARD xbridgefeather)
++set(PICO_PLATFORM rp2040)
+diff --git a/configs/XBridgeFeather/xbridgefeather.h b/configs/XBridgeFeather/xbridgefeather.h
+new file mode 100644
+index 0000000..72d8ac7
+--- /dev/null
++++ b/configs/XBridgeFeather/xbridgefeather.h
+@@ -0,0 +1,100 @@
++/*
++ * Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ */
++
++// -----------------------------------------------------
++// NOTE: THIS HEADER IS ALSO INCLUDED BY ASSEMBLER SO
++//       SHOULD ONLY CONSIST OF PREPROCESSOR DIRECTIVES
++// -----------------------------------------------------
++
++#ifndef _BOARDS_XBRIDGEFEATHER_H
++#define _BOARDS_XBRIDGEFEATHER_H
++
++pico_board_cmake_set(PICO_PLATFORM, rp2040)
++
++// XBridge: copy of the SDK Adafruit Feather RP2040 USB Host board file,
++// plus a default SPI chip-select pin that GP2040-CE expects.
++
++// For board detection
++#define ADAFRUIT_FEATHER_RP2040_USB_HOST
++
++// On some samples, the xosc can take longer to stabilize than is usual
++#ifndef PICO_XOSC_STARTUP_DELAY_MULTIPLIER
++#define PICO_XOSC_STARTUP_DELAY_MULTIPLIER 64
++#endif
++
++//------------- UART -------------//
++#ifndef PICO_DEFAULT_UART
++#define PICO_DEFAULT_UART 0
++#endif
++
++#ifndef PICO_DEFAULT_UART_TX_PIN
++#define PICO_DEFAULT_UART_TX_PIN 0
++#endif
++
++#ifndef PICO_DEFAULT_UART_RX_PIN
++#define PICO_DEFAULT_UART_RX_PIN 1
++#endif
++
++//------------- LED -------------//
++#ifndef PICO_DEFAULT_LED_PIN
++#define PICO_DEFAULT_LED_PIN 13
++#endif
++
++//------------- I2C -------------//
++#ifndef PICO_DEFAULT_I2C
++#define PICO_DEFAULT_I2C 1
++#endif
++
++#ifndef PICO_DEFAULT_I2C_SDA_PIN
++#define PICO_DEFAULT_I2C_SDA_PIN 2
++#endif
++
++#ifndef PICO_DEFAULT_I2C_SCL_PIN
++#define PICO_DEFAULT_I2C_SCL_PIN 3
++#endif
++
++//------------- SPI -------------//
++#ifndef PICO_DEFAULT_SPI
++#define PICO_DEFAULT_SPI 1
++#endif
++
++#ifndef PICO_DEFAULT_SPI_TX_PIN
++#define PICO_DEFAULT_SPI_TX_PIN 15
++#endif
++
++#ifndef PICO_DEFAULT_SPI_RX_PIN
++#define PICO_DEFAULT_SPI_RX_PIN 8
++#endif
++
++#ifndef PICO_DEFAULT_SPI_SCK_PIN
++#define PICO_DEFAULT_SPI_SCK_PIN 14
++#endif
++
++// Not wired on this build; GP2040-CE just needs a value.
++#ifndef PICO_DEFAULT_SPI_CSN_PIN
++#define PICO_DEFAULT_SPI_CSN_PIN 9
++#endif
++
++//------------- FLASH -------------//
++
++// Use slower generic flash access
++#define PICO_BOOT_STAGE2_CHOOSE_GENERIC_03H 1
++
++#ifndef PICO_FLASH_SPI_CLKDIV
++#define PICO_FLASH_SPI_CLKDIV 4
++#endif
++
++pico_board_cmake_set_default(PICO_FLASH_SIZE_BYTES, (8 * 1024 * 1024))
++#ifndef PICO_FLASH_SIZE_BYTES
++#define PICO_FLASH_SIZE_BYTES (8 * 1024 * 1024)
++#endif
++
++// All boards have B1 RP2040
++#ifndef PICO_RP2040_B0_SUPPORTED
++#define PICO_RP2040_B0_SUPPORTED 0
++#endif
++
++#endif
+diff --git a/headers/addons/pilink.h b/headers/addons/pilink.h
+new file mode 100644
+index 0000000..e74b35d
+--- /dev/null
++++ b/headers/addons/pilink.h
+@@ -0,0 +1,132 @@
++/*
++ * SPDX-License-Identifier: MIT
++ *
++ * XBridge Pi link add-on.
++ *
++ * Takes a finished controller state (buttons, sticks, triggers) from a
++ * Raspberry Pi over I2C and feeds it into the gamepad, so the Xbox driver
++ * sends it to the console as if a real pad was plugged in.
++ *
++ * The board is an I2C *target* (the Pi drives the bus). Packet format
++ * (14 bytes, written by the Pi):
++ *
++ *   [0]      sequence number (wraps)
++ *   [1..2]   buttons, little-endian, bits as PILINK_BTN_* below
++ *   [3..4]   left stick X   (0 = full left,  65535 = full right)
++ *   [5..6]   left stick Y   (0 = full up,    65535 = full down)
++ *   [7..8]   right stick X
++ *   [9..10]  right stick Y
++ *   [11]     left trigger   (0..255)
++ *   [12]     right trigger  (0..255)
++ *   [13]     CRC-8, poly 0x07, init PILINK_CRC_INIT, over bytes 0..12
++ *
++ * Reading from the board returns 4 status bytes:
++ *   [0] PILINK_STATUS_MAGIC
++ *   [1] firmware link version
++ *   [2] flags: bit0 USB host (Xbox) has configured us,
++ *              bit1 Xbox authentication finished,
++ *              bit2 running in Xbox One mode,
++ *              bit3 a fresh packet from the Pi is being used
++ *   [3] count of bad packets seen (wraps)
++ */
++
++#ifndef _PiLink_H
++#define _PiLink_H
++
++#include "gpaddon.h"
++#include "gamepad.h"
++
++#ifndef PI_LINK_ENABLED
++#define PI_LINK_ENABLED 0
++#endif
++
++#ifndef PI_LINK_PIN_SDA
++#define PI_LINK_PIN_SDA 2
++#endif
++
++#ifndef PI_LINK_PIN_SCL
++#define PI_LINK_PIN_SCL 3
++#endif
++
++// i2c0 or i2c1 - must match the pins above (GPIO2/3 are I2C1 on RP2040)
++#ifndef PI_LINK_I2C_BLOCK
++#define PI_LINK_I2C_BLOCK i2c1
++#endif
++
++#ifndef PI_LINK_ADDRESS
++#define PI_LINK_ADDRESS 0x42
++#endif
++
++// Status LED (-1 for none). Solid = Pi data arriving, slow blink = waiting.
++#ifndef PI_LINK_PIN_LED
++#define PI_LINK_PIN_LED -1
++#endif
++
++// Pin that switches on 5V for the USB-A host port (-1 for none). Driven
++// high firmly at start-up rather than relying on a weak pull-up.
++#ifndef PI_LINK_PIN_USB_5V_EN
++#define PI_LINK_PIN_USB_5V_EN -1
++#endif
++
++// If no good packet arrives for this long, everything is released.
++#ifndef PI_LINK_TIMEOUT_MS
++#define PI_LINK_TIMEOUT_MS 100
++#endif
++
++// Ignore Pi input for this long after power-up so held keys can't trigger
++// boot-time mode switches.
++#ifndef PI_LINK_BOOT_GUARD_MS
++#define PI_LINK_BOOT_GUARD_MS 500
++#endif
++
++#define PI_LINK_PACKET_SIZE   14
++#define PI_LINK_STATUS_SIZE   4
++#define PI_LINK_CRC_INIT      0x5A
++#define PILINK_STATUS_MAGIC   0xB7
++#define PILINK_VERSION        1
++
++#define PILINK_BTN_A      (1u << 0)
++#define PILINK_BTN_B      (1u << 1)
++#define PILINK_BTN_X      (1u << 2)
++#define PILINK_BTN_Y      (1u << 3)
++#define PILINK_BTN_LB     (1u << 4)
++#define PILINK_BTN_RB     (1u << 5)
++#define PILINK_BTN_VIEW   (1u << 6)
++#define PILINK_BTN_MENU   (1u << 7)
++#define PILINK_BTN_LS     (1u << 8)
++#define PILINK_BTN_RS     (1u << 9)
++#define PILINK_BTN_GUIDE  (1u << 10)
++#define PILINK_BTN_SHARE  (1u << 11)
++#define PILINK_BTN_DUP    (1u << 12)
++#define PILINK_BTN_DDOWN  (1u << 13)
++#define PILINK_BTN_DLEFT  (1u << 14)
++#define PILINK_BTN_DRIGHT (1u << 15)
++
++#define PiLinkName "PiLink"
++
++class PiLinkInput : public GPAddon {
++public:
++    virtual bool available();
++    virtual void setup();
++    virtual void process() {}
++    virtual void preprocess();
++    virtual void postprocess(bool sent) {}
++    virtual void reinit() {}
++    virtual std::string name() { return PiLinkName; }
++
++    // True once this add-on is running. Used to switch off the button-combo
++    // reboot shortcuts, which a keyboard could otherwise hit by accident.
++    static bool isActive() { return active; }
++
++    // Exposed for the host-side unit test of the packet format.
++    static uint8_t crc8(const uint8_t* data, uint32_t len);
++
++private:
++    void updateStatusFlags(bool fresh);
++    void updateLed(bool fresh, uint32_t nowMs);
++
++    static bool active;
++    uint32_t setupMs = 0;
++};
++
++#endif // _PiLink_H
+diff --git a/src/addons/pilink.cpp b/src/addons/pilink.cpp
+new file mode 100644
+index 0000000..0fb0ea0
+--- /dev/null
++++ b/src/addons/pilink.cpp
+@@ -0,0 +1,224 @@
++/*
++ * SPDX-License-Identifier: MIT
++ *
++ * XBridge Pi link add-on - see headers/addons/pilink.h for the wire format.
++ */
++
++#include "addons/pilink.h"
++#include "storagemanager.h"
++#include "drivermanager.h"
++#include "drivers/xbone/XBOneDriver.h"
++
++#include "hardware/gpio.h"
++#include "hardware/i2c.h"
++#include "hardware/sync.h"
++#include "pico/i2c_slave.h"
++#include "pico/time.h"
++#include "tusb.h"
++
++#include <string.h>
++
++bool PiLinkInput::active = false;
++
++// ---------------------------------------------------------------------------
++// State shared with the I2C interrupt. Everything the interrupt writes is
++// only read by the main loop with interrupts briefly off.
++// ---------------------------------------------------------------------------
++static uint8_t rxBuf[PI_LINK_PACKET_SIZE + 1];
++static volatile uint8_t rxLen = 0;
++static volatile bool rxOverflow = false;
++
++static uint8_t latestPacket[PI_LINK_PACKET_SIZE];
++static volatile uint32_t latestPacketUs = 0;   // time the last good packet landed
++static volatile bool havePacket = false;
++static volatile uint8_t badPackets = 0;
++
++static uint8_t statusBuf[PI_LINK_STATUS_SIZE] = { PILINK_STATUS_MAGIC, PILINK_VERSION, 0, 0 };
++static volatile uint8_t txIdx = 0;
++
++uint8_t PiLinkInput::crc8(const uint8_t* data, uint32_t len) {
++    uint8_t crc = PI_LINK_CRC_INIT;
++    for (uint32_t i = 0; i < len; i++) {
++        crc ^= data[i];
++        for (int b = 0; b < 8; b++) {
++            crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
++        }
++    }
++    return crc;
++}
++
++static inline void __not_in_flash_func(drainRx)(i2c_inst_t* i2c) {
++    while (i2c_get_read_available(i2c)) {
++        uint8_t b = i2c_read_byte_raw(i2c);
++        if (rxLen < sizeof(rxBuf)) {
++            rxBuf[rxLen++] = b;
++        } else {
++            rxOverflow = true;
++        }
++    }
++}
++
++static void __not_in_flash_func(pilinkI2CHandler)(i2c_inst_t* i2c, i2c_slave_event_t event) {
++    switch (event) {
++        case I2C_SLAVE_RECEIVE:
++            drainRx(i2c);
++            break;
++
++        case I2C_SLAVE_REQUEST:
++            // One byte per request; pad with zeros if the Pi reads too far.
++            i2c_write_byte_raw(i2c, txIdx < PI_LINK_STATUS_SIZE ? statusBuf[txIdx] : 0);
++            txIdx++;
++            break;
++
++        case I2C_SLAVE_FINISH:
++            // The SDK can report the stop before the last bytes are read
++            // if this interrupt ran late, so collect anything still waiting.
++            drainRx(i2c);
++            if (rxLen > 0) {
++                if (!rxOverflow && rxLen == PI_LINK_PACKET_SIZE &&
++                    PiLinkInput::crc8(rxBuf, PI_LINK_PACKET_SIZE - 1) == rxBuf[PI_LINK_PACKET_SIZE - 1]) {
++                    memcpy(latestPacket, rxBuf, PI_LINK_PACKET_SIZE);
++                    latestPacketUs = time_us_32();
++                    havePacket = true;
++                } else {
++                    badPackets = badPackets + 1;
++                }
++            }
++            rxLen = 0;
++            rxOverflow = false;
++            txIdx = 0;
++            break;
++    }
++}
++
++bool PiLinkInput::available() {
++    return PI_LINK_ENABLED;
++}
++
++void PiLinkInput::setup() {
++    i2c_inst_t* i2c = PI_LINK_I2C_BLOCK;
++
++    gpio_init(PI_LINK_PIN_SDA);
++    gpio_init(PI_LINK_PIN_SCL);
++    gpio_set_function(PI_LINK_PIN_SDA, GPIO_FUNC_I2C);
++    gpio_set_function(PI_LINK_PIN_SCL, GPIO_FUNC_I2C);
++    // The Pi end has only weak pull-ups on its pins, so add ours too.
++    gpio_pull_up(PI_LINK_PIN_SDA);
++    gpio_pull_up(PI_LINK_PIN_SCL);
++
++    i2c_init(i2c, 400 * 1000); // speed is set by the Pi; this just enables the block
++    i2c_slave_init(i2c, PI_LINK_ADDRESS, &pilinkI2CHandler);
++
++#if PI_LINK_PIN_USB_5V_EN >= 0
++    // Power the USB-A port for the auth adapter before USB host starts.
++    gpio_init(PI_LINK_PIN_USB_5V_EN);
++    gpio_set_dir(PI_LINK_PIN_USB_5V_EN, GPIO_OUT);
++    gpio_put(PI_LINK_PIN_USB_5V_EN, 1);
++#endif
++
++#if PI_LINK_PIN_LED >= 0
++    gpio_init(PI_LINK_PIN_LED);
++    gpio_set_dir(PI_LINK_PIN_LED, GPIO_OUT);
++    gpio_put(PI_LINK_PIN_LED, 0);
++#endif
++
++    // Triggers come from the Pi as proper analogue values.
++    Storage::getInstance().GetGamepad()->hasAnalogTriggers = true;
++
++    setupMs = to_ms_since_boot(get_absolute_time());
++    active = true;
++}
++
++void PiLinkInput::updateStatusFlags(bool fresh) {
++    uint8_t flags = 0;
++    if (tud_mounted()) flags |= 0x01;
++
++    DriverManager& dm = DriverManager::getInstance();
++    if (dm.getInputMode() == INPUT_MODE_XBONE) {
++        flags |= 0x04;
++        GPDriver* driver = dm.getDriver();
++        if (driver != nullptr && ((XBOneDriver*)driver)->getAuthSent()) flags |= 0x02;
++    }
++    if (fresh) flags |= 0x08;
++
++    statusBuf[2] = flags;
++    statusBuf[3] = badPackets;
++}
++
++void PiLinkInput::updateLed(bool fresh, uint32_t nowMs) {
++#if PI_LINK_PIN_LED >= 0
++    // Solid when the Pi is talking to us, slow blink when it isn't.
++    gpio_put(PI_LINK_PIN_LED, fresh ? 1 : ((nowMs / 500) & 1));
++#else
++    (void)fresh; (void)nowMs;
++#endif
++}
++
++static inline uint16_t rd16(const uint8_t* p) {
++    return (uint16_t)(p[0] | (p[1] << 8));
++}
++
++void PiLinkInput::preprocess() {
++    Gamepad* gamepad = Storage::getInstance().GetGamepad();
++    uint32_t nowMs = to_ms_since_boot(get_absolute_time());
++
++    uint8_t pkt[PI_LINK_PACKET_SIZE];
++    bool gotPacket;
++    uint32_t pktUs;
++    uint32_t irq = save_and_disable_interrupts();
++    gotPacket = havePacket;
++    pktUs = latestPacketUs;
++    memcpy(pkt, latestPacket, sizeof(pkt));
++    restore_interrupts(irq);
++
++    bool fresh = gotPacket &&
++                 (time_us_32() - pktUs) < (PI_LINK_TIMEOUT_MS * 1000u) &&
++                 (nowMs - setupMs) >= PI_LINK_BOOT_GUARD_MS;
++
++    updateStatusFlags(fresh);
++    updateLed(fresh, nowMs);
++
++    if (!fresh) {
++        // No Pi (or it stopped): leave the pad completely neutral.
++        gamepad->state.buttons = 0;
++        gamepad->state.dpad = 0;
++        gamepad->state.lx = GAMEPAD_JOYSTICK_MID;
++        gamepad->state.ly = GAMEPAD_JOYSTICK_MID;
++        gamepad->state.rx = GAMEPAD_JOYSTICK_MID;
++        gamepad->state.ry = GAMEPAD_JOYSTICK_MID;
++        gamepad->state.lt = 0;
++        gamepad->state.rt = 0;
++        return;
++    }
++
++    uint16_t b = rd16(&pkt[1]);
++
++    uint32_t buttons = 0;
++    if (b & PILINK_BTN_A)     buttons |= GAMEPAD_MASK_B1;
++    if (b & PILINK_BTN_B)     buttons |= GAMEPAD_MASK_B2;
++    if (b & PILINK_BTN_X)     buttons |= GAMEPAD_MASK_B3;
++    if (b & PILINK_BTN_Y)     buttons |= GAMEPAD_MASK_B4;
++    if (b & PILINK_BTN_LB)    buttons |= GAMEPAD_MASK_L1;
++    if (b & PILINK_BTN_RB)    buttons |= GAMEPAD_MASK_R1;
++    if (b & PILINK_BTN_VIEW)  buttons |= GAMEPAD_MASK_S1;
++    if (b & PILINK_BTN_MENU)  buttons |= GAMEPAD_MASK_S2;
++    if (b & PILINK_BTN_LS)    buttons |= GAMEPAD_MASK_L3;
++    if (b & PILINK_BTN_RS)    buttons |= GAMEPAD_MASK_R3;
++    if (b & PILINK_BTN_GUIDE) buttons |= GAMEPAD_MASK_A1;
++    if (b & PILINK_BTN_SHARE) buttons |= GAMEPAD_MASK_A2;
++
++    uint8_t dpad = 0;
++    if (b & PILINK_BTN_DUP)    dpad |= GAMEPAD_MASK_UP;
++    if (b & PILINK_BTN_DDOWN)  dpad |= GAMEPAD_MASK_DOWN;
++    if (b & PILINK_BTN_DLEFT)  dpad |= GAMEPAD_MASK_LEFT;
++    if (b & PILINK_BTN_DRIGHT) dpad |= GAMEPAD_MASK_RIGHT;
++
++    gamepad->state.buttons = buttons;
++    gamepad->state.dpad = dpad;
++    gamepad->state.lx = rd16(&pkt[3]);
++    gamepad->state.ly = rd16(&pkt[5]);
++    gamepad->state.rx = rd16(&pkt[7]);
++    gamepad->state.ry = rd16(&pkt[9]);
++    gamepad->state.lt = pkt[11];
++    gamepad->state.rt = pkt[12];
++}
+diff --git a/src/gp2040.cpp b/src/gp2040.cpp
+index 315221f..a6812c2 100644
+--- a/src/gp2040.cpp
++++ b/src/gp2040.cpp
+@@ -38,6 +38,7 @@
+ #include "addons/he_trigger.h"
+ #include "addons/tg16_input.h"
+ #include "addons/slider_profile.h"
++#include "addons/pilink.h"
+ 
+ // Pico includes
+ #include "pico/bootrom.h"
+@@ -125,6 +126,7 @@ void GP2040::setup() {
+ 	addons.LoadAddon(new RotaryEncoderInput());
+ 	addons.LoadAddon(new PCF8575Addon());
+ 	addons.LoadAddon(new TG16padInput());
++	addons.LoadAddon(new PiLinkInput());
+ 
+ 	// Input override addons
+ 	addons.LoadAddon(new ReverseInput());
+@@ -316,7 +318,7 @@ void __not_in_flash_func(GP2040::run)() {
+ 		addons.ProcessAddons();
+ 
+ 		gamepad->hotkey(); 	// check for MPGS hotkeys
+-		rebootHotkeys.process(gamepad, configMode);
++		if (!PiLinkInput::isActive()) rebootHotkeys.process(gamepad, configMode);
+ 
+ 		checkProcessedState(processedGamepad->state, gamepad->state);
+ 
