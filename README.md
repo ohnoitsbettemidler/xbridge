@@ -16,11 +16,16 @@ GTA VI doesn't support mouse and keyboard on Xbox, so this makes the Xbox think 
 ## How it works
 
 ```
-mouse + keyboard ──USB──▶ Raspberry Pi 3 B+ ──3 wires──▶ Feather RP2040 USB Host ──USB-C──▶ Xbox
-                          (does the GTA-specific           │
-                           translation)                    └─ USB-A: Magic-X dongle or an Xbox
-                                                              controller (gets it past the
-                                                              Xbox's security check)
+mouse + keyboard
+      │ USB
+      ▼
+Raspberry Pi 3 B+            does the GTA-specific translation
+      │ 3 wires
+      ▼
+Feather RP2040 USB Host  ◀── USB-A: Magic-X dongle or an Xbox controller,
+      │ USB-C                 which gets it past the Xbox's security check
+      ▼
+Xbox Series X|S
 ```
 
 The Xbox only accepts Microsoft-approved controllers. It asks each one a coded question that only an approved chip can answer. The Feather passes the question to the approved device plugged into it and hands back the answer. Everything else is the Feather pretending to be a wired pad, fed 200 times a second by the Pi.
