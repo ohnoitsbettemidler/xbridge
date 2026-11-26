@@ -1,0 +1,12 @@
+[Unit]
+Description=XBridge mouse and keyboard to Xbox bridge
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 -u /opt/xbridge/xbridge.py --config /etc/xbridge/config.json
+Restart=always
+RestartSec=2
+Nice=-10
+
+[Install]
+WantedBy=multi-user.target
