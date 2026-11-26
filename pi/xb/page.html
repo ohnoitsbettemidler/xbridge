@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XBridge</title>
+<style>
+  :root {
+    --bg: #f4f4f1; --card: #ffffff; --ink: #1b1d1f; --muted: #6b6f75; --line: #e1e1dc;
+    --accent: #107c10; --accent-ink: #ffffff; --warn: #b4620a; --bad: #b3261e; --chip: #ececE7;
+    --dot: #107c10;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111312; --card: #1b1e1c; --ink: #e8eae7; --muted: #9aa09b; --line: #2c312e;
+            --accent: #3fb43f; --accent-ink: #0b0d0c; --warn: #e3a34a; --bad: #ef6b62; --chip: #262a27;
+            --dot: #5fd35f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 18px 16px 6px; max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  main { max-width: 760px; margin: 0 auto; padding: 0 16px 110px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { font-size: 13px; padding: 3px 9px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+  .pill.good { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .pill.bad { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+  .live { display: grid; grid-template-columns: auto auto 1fr; gap: 14px; align-items: center; }
+  .stick { width: 84px; height: 84px; border-radius: 50%; border: 2px solid var(--line); position: relative; }
+  .stick::after { content: ""; position: absolute; left: 50%; top: 50%; width: 1px; height: 1px; }
+  .stick .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: var(--dot);
+                left: calc(50% - 7px); top: calc(50% - 7px); transition: transform 40ms linear; }
+  .stick-label { font-size: 12px; color: var(--muted); text-align: center; margin-top: 4px; }
+  .bars { display: grid; gap: 6px; min-width: 0; }
+  .bar { display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .bar .track { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+  .bar .fill { height: 100%; width: 0; background: var(--dot); }
+  .buttons { display: flex; flex-wrap: wrap; gap: 4px; min-height: 24px; }
+  .buttons span { font-size: 12px; padding: 2px 7px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); }
+  .messages { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 1em; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row label { font-weight: 550; }
+  .row .help { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+  .row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+  .row output { font-variant-numeric: tabular-nums; color: var(--muted); }
+  input[type=number], select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+                               border-radius: 8px; padding: 6px 8px; max-width: 100%; }
+  input[type=number] { width: 90px; }
+  .switch { width: 20px; height: 20px; accent-color: var(--accent); }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tabs button { font: inherit; border: 1px solid var(--line); background: transparent; color: var(--ink);
+                 border-radius: 99px; padding: 5px 12px; cursor: pointer; }
+  .tabs button[aria-selected=true] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .bind { display: grid; grid-template-columns: minmax(0,1fr) 16px minmax(0,1fr) minmax(0,1fr) 32px;
+          grid-template-areas: "k ar a1 a2 del"; gap: 6px; align-items: center; padding: 5px 0;
+          border-top: 1px solid var(--line); }
+  .bind:first-child { border-top: 0; }
+  .bind .k { grid-area: k; } .bind .arrow { grid-area: ar; } .bind .a1 { grid-area: a1; }
+  .bind .act2 { grid-area: a2; } .bind .icon { grid-area: del; }
+  .bind .arrow { color: var(--muted); text-align: center; }
+  .bind select { width: 100%; }
+  .icon { font: inherit; border: 1px solid var(--line); background: transparent; color: var(--muted);
+          border-radius: 8px; height: 32px; cursor: pointer; }
+  .angles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .angles label { font-size: 12px; color: var(--muted); display: grid; gap: 2px; }
+  .angles input { width: 100%; }
+  .savebar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line);
+             padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .savebar .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 8px; align-items: center; }
+  .savebar .note { flex: 1; font-size: 13px; color: var(--muted); min-width: 0; }
+  .btn { font: inherit; font-weight: 600; border-radius: 10px; padding: 9px 14px; cursor: pointer;
+         border: 1px solid var(--line); background: transparent; color: var(--ink); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .error { color: var(--bad); }
+  details summary { cursor: pointer; color: var(--muted); }
+  @media (max-width: 420px) {
+    .live { grid-template-columns: auto auto; }
+    .bars { grid-column: 1 / -1; }
+    .bind { grid-template-columns: minmax(0,1fr) minmax(0,1fr) 32px; grid-template-areas: "k a1 del" ". a2 ."; }
+    .bind .arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>XBridge</h1>
+  <div class="pills" id="pills"><span class="pill">Connecting…</span></div>
+</header>
+<main>
+  <section class="card">
+    <h2>What the Xbox is getting</h2>
+    <div class="live">
+      <div><div class="stick" id="ls"><div class="dot"></div></div><div class="stick-label">Left stick</div></div>
+      <div><div class="stick" id="rs"><div class="dot"></div></div><div class="stick-label">Right stick</div></div>
+      <div class="bars">
+        <div class="bar"><span>LT</span><div class="track"><div class="fill" id="lt"></div></div></div>
+        <div class="bar"><span>RT</span><div class="track"><div class="fill" id="rt"></div></div></div>
+        <div class="buttons" id="btns"></div>
+      </div>
+    </div>
+    <div class="messages" id="msgs"></div>
+  </section>
+
+  <section class="card" id="mouse-card">
+    <h2>Mouse</h2>
+    <div id="mouse"></div>
+  </section>
+
+  <section class="card">
+    <h2>Moving and driving</h2>
+    <div id="movement"></div>
+  </section>
+
+  <section class="card">
+    <h2>Keys</h2>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div id="binds"></div>
+    <button class="btn" id="addbind" type="button">Add a key</button>
+  </section>
+
+  <section class="card">
+    <h2>Weapon wheel (keys 1–8)</h2>
+    <div id="wheel"></div>
+    <div class="row"><label>Slot directions</label>
+      <div class="help">Degrees clockwise from straight up for each slot. Check these against the in-game wheel.</div>
+    </div>
+    <div class="angles" id="angles"></div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Advanced</summary>
+      <div id="advanced" style="margin-top:8px"></div>
+    </details>
+  </section>
+</main>
+
+<div class="savebar"><div class="inner">
+  <div class="note" id="note">Loading…</div>
+  <button class="btn" id="defaults" type="button">Defaults</button>
+  <button class="btn" id="undo" type="button" disabled>Undo</button>
+  <button class="btn primary" id="save" type="button" disabled>Save</button>
+</div></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let meta = null, saved = null, draft = null, version = 0, tab = 'foot', dirty = false;
+
+  const FRIENDLY_KEYS = {
+    MOUSE_LEFT: 'Left mouse', MOUSE_RIGHT: 'Right mouse', MOUSE_MIDDLE: 'Middle mouse (wheel click)',
+    MOUSE_SIDE: 'Mouse side (back)', MOUSE_EXTRA: 'Mouse side (forward)', MOUSE_FORWARD: 'Mouse forward',
+    MOUSE_BACK: 'Mouse back', WHEEL_UP: 'Scroll up', WHEEL_DOWN: 'Scroll down',
+    LEFTSHIFT: 'Left Shift', RIGHTSHIFT: 'Right Shift', LEFTCTRL: 'Left Ctrl', RIGHTCTRL: 'Right Ctrl',
+    LEFTALT: 'Left Alt', RIGHTALT: 'Right Alt (AltGr)', SPACE: 'Space', ESC: 'Esc', TAB: 'Tab',
+    ENTER: 'Enter', BACKSPACE: 'Backspace', CAPSLOCK: 'Caps Lock', GRAVE: '` (backtick)',
+    UP: 'Up arrow', DOWN: 'Down arrow', LEFT: 'Left arrow', RIGHT: 'Right arrow', PAUSE: 'Pause/Break'
+  };
+  const keyName = (k) => FRIENDLY_KEYS[k] || k;
+  const TAB_NAMES = { common: 'Every mode', foot: 'On foot', vehicle: 'Driving', air: 'Flying' };
+
+  const MOUSE_FIELDS = [
+    ['sensitivity', 'Look sensitivity', 0.05, 5, 0.01, 'Camera speed on foot. F10 / F11 nudge it while playing.'],
+    ['aim_sensitivity', 'Aim sensitivity', 0.05, 5, 0.01, 'Used while the aim button (right mouse) is held.'],
+    ['vehicle_sensitivity', 'Driving camera sensitivity', 0.05, 5, 0.01, 'Camera speed in driving and flying modes.'],
+    ['vertical_ratio', 'Up/down speed', 0.1, 2, 0.01, 'Compared with left/right. 1 = same speed.'],
+    ['smoothing_ms', 'Smoothing (ms)', 0, 50, 1, 'Higher is smoother but a touch laggier. 12–20 suits GTA.'],
+    ['deadzone', 'Deadzone', 0, 0.4, 0.001, "The game's dead patch in the middle of the stick. Use F9 in game to measure it."],
+    ['curve', 'Response curve', 0.3, 3, 0.05, 'If small movements feel sluggish and big ones fast, raise this.'],
+  ];
+  const MOVE_FIELDS = [
+    ['walk_speed', 'Walk speed', 0.05, 1, 0.01, 'How far the stick goes while the walk key (Left Alt) is held.'],
+    ['steer_ramp_ms', 'Steering ramp (ms)', 0, 800, 10, 'Time from straight ahead to full lock.'],
+    ['steer_return_ms', 'Steering return (ms)', 0, 800, 10, 'Time back to straight after letting go.'],
+    ['throttle_ramp_ms', 'Throttle ramp (ms)', 0, 800, 10, 'Time to full throttle. Stops wheelspin from a standing start.'],
+    ['gentle_scale', 'Gentle driving amount', 0.05, 1, 0.01, 'Left Alt while driving scales throttle and steering by this.'],
+  ];
+
+  function el(tag, attrs = {}, ...kids) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'text') e.textContent = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v);
+    }
+    kids.forEach(k => e.append(k));
+    return e;
+  }
+
+  function markDirty() {
+    dirty = JSON.stringify(draft) !== JSON.stringify(saved);
+    $('save').disabled = !dirty; $('undo').disabled = !dirty;
+    $('note').textContent = dirty ? 'Unsaved changes' : 'Saved on the Pi';
+    $('note').className = 'note';
+  }
+
+  function slider(holder, obj, key, label, min, max, step, help) {
+    const out = el('output');
+    const fmt = (v) => step >= 1 ? String(Math.round(v)) : Number(v).toFixed(step < 0.01 ? 3 : 2);
+    const input = el('input', { type: 'range', min, max, step });
+    input.value = obj[key]; out.textContent = fmt(obj[key]);
+    input.addEventListener('input', () => { obj[key] = Number(input.value); out.textContent = fmt(obj[key]); markDirty(); });
+    holder.append(el('div', { class: 'row' }, el('label', { text: label }), out, input, el('div', { class: 'help', text: help })));
+  }
+
+  function toggle(holder, obj, key, label, help) {
+    const box = el('input', { type: 'checkbox', class: 'switch' });
+    box.checked = !!obj[key];
+    box.addEventListener('change', () => { obj[key] = box.checked; markDirty(); });
+    holder.append(el('div', { class: 'row' }, el('label', { text: label }), box, el('div', { class: 'help', text: help })));
+  }
+
+  function number(holder, obj, key, label, min, max, help) {
+    const input = el('input', { type: 'number', min, max, step: 1 });
+    input.value = obj[key];
+    input.addEventListener('input', () => { obj[key] = Number(input.value); markDirty(); });
+    holder.append(el('div', { class: 'row' }, el('label', { text: label }), input, el('div', { class: 'help', text: help })));
+  }
+
+  function actionSelect(value, allowNone) {
+    const s = el('select');
+    if (allowNone) s.append(el('option', { value: '', text: '—' }));
+    for (const a of meta.actions) s.append(el('option', { value: a, text: meta.action_labels[a] || a }));
+    s.value = value || '';
+    return s;
+  }
+
+  function keySelect(value) {
+    const s = el('select');
+    for (const k of meta.keys) s.append(el('option', { value: k, text: keyName(k) }));
+    s.value = value;
+    return s;
+  }
+
+  function renderBinds() {
+    const tabs = $('tabs'); tabs.innerHTML = '';
+    for (const p of ['foot', 'vehicle', 'air', 'common']) {
+      tabs.append(el('button', { type: 'button', role: 'tab', 'aria-selected': String(p === tab), text: TAB_NAMES[p],
+                                 onclick: () => { tab = p; renderBinds(); } }));
+    }
+    const box = $('binds'); box.innerHTML = '';
+    const table = draft.bindings[tab] || (draft.bindings[tab] = {});
+    const keys = Object.keys(table).sort((a, b) => keyName(a).localeCompare(keyName(b), undefined, { numeric: true }));
+    for (const k of keys) {
+      const acts = table[k];
+      const ks = keySelect(k), a1 = actionSelect(acts[0], false), a2 = actionSelect(acts[1], true);
+      a2.classList.add('act2'); ks.classList.add('k'); a1.classList.add('a1');
+      const apply = () => {
+        const newKey = ks.value;
+        if (newKey !== k && table[newKey]) { alert(keyName(newKey) + ' is already set in this tab.'); ks.value = k; return; }
+        delete table[k];
+        table[newKey] = [a1.value].concat(a2.value ? [a2.value] : []);
+        renderBinds(); markDirty();
+      };
+      ks.addEventListener('change', apply); a1.addEventListener('change', apply); a2.addEventListener('change', apply);
+      const del = el('button', { class: 'icon', type: 'button', title: 'Remove', text: '✕',
+                                 onclick: () => { delete table[k]; renderBinds(); markDirty(); } });
+      box.append(el('div', { class: 'bind' }, ks, el('span', { class: 'arrow', text: '→' }), a1, a2, del));
+    }
+    if (!keys.length) box.append(el('p', { class: 'help', text: 'Nothing set in this tab yet.' }));
+    if (tab === 'common') box.prepend(el('p', { class: 'help', text: 'Keys here work in every mode unless a mode sets the same key differently.' }));
+  }
+
+  function render() {
+    const m = $('mouse'); m.innerHTML = '';
+    for (const f of MOUSE_FIELDS) slider(m, draft.mouse, ...f);
+    toggle(m, draft.mouse, 'invert_y', 'Invert up/down', 'Mouse forward looks down.');
+    const mv = $('movement'); mv.innerHTML = '';
+    for (const f of MOVE_FIELDS) slider(mv, draft.movement, ...f);
+
+    const w = $('wheel'); w.innerHTML = '';
+    const bs = el('select');
+    for (const b of meta.button_actions) bs.append(el('option', { value: b, text: meta.action_labels[b] || b }));
+    bs.value = draft.wheel.button;
+    bs.addEventListener('change', () => { draft.wheel.button = bs.value; markDirty(); });
+    w.append(el('div', { class: 'row' }, el('label', { text: 'Button that opens the wheel' }), bs,
+                el('div', { class: 'help', text: 'Held while the stick picks the slot.' })));
+    slider(w, draft.wheel, 'open_ms', 'Wait for wheel (ms)', 0, 500, 10, 'How long to hold the button before pointing at the slot.');
+    slider(w, draft.wheel, 'select_ms', 'Point at slot (ms)', 10, 500, 10, 'How long to hold the stick on the slot before letting go.');
+    const ang = $('angles'); ang.innerHTML = '';
+    draft.wheel.angles.forEach((a, i) => {
+      const inp = el('input', { type: 'number', min: 0, max: 359, step: 1 });
+      inp.value = Math.round(a);
+      inp.addEventListener('input', () => { draft.wheel.angles[i] = Number(inp.value) || 0; markDirty(); });
+      ang.append(el('label', {}, 'Slot ' + (i + 1), inp));
+    });
+
+    const adv = $('advanced'); adv.innerHTML = '';
+    number(adv, draft, 'rate_hz', 'Updates per second', 50, 500, 'How often the Pi sends to the Feather. 200 is plenty for GTA.');
+    slider(adv, draft.mouse, 'ref_speed', 'Mouse speed for full turn', 200, 8000, 50, 'Mouse counts per second that equal a full-speed turn at sensitivity 1. Normally left alone.');
+    toggle(adv, draft, 'keyboard_leds', 'Keyboard lights show the mode', 'Scroll Lock = driving, Num Lock = flying, Caps Lock = paused.');
+    number(adv, draft, 'i2c_bus', 'I2C bus number', 0, 20, 'Set by the installer. Only change if told to.');
+    renderBinds();
+    markDirty();
+  }
+
+  async function loadConfig() {
+    const r = await fetch('/api/config'); const body = await r.json();
+    saved = body.config; version = body.version;
+    draft = structuredClone(saved);
+    render();
+  }
+
+  $('save').addEventListener('click', async () => {
+    $('save').disabled = true; $('note').textContent = 'Saving…';
+    try {
+      const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                             body: JSON.stringify(draft) });
+      const body = await r.json();
+      if (!r.ok || !body.ok) throw new Error(body.error || 'Save failed');
+      saved = body.config; version = body.version; draft = structuredClone(saved);
+      render(); $('note').textContent = 'Saved - live now';
+    } catch (e) {
+      $('note').textContent = e.message; $('note').className = 'note error'; $('save').disabled = false;
+    }
+  });
+  $('undo').addEventListener('click', () => { loadConfig(); });
+  $('defaults').addEventListener('click', () => {
+    if (!confirm('Put every setting and key back to the defaults? (Nothing is saved until you press Save.)')) return;
+    draft = structuredClone(meta.defaults); render();
+  });
+
+  function pill(text, cls) { return el('span', { class: 'pill ' + (cls || ''), text }); }
+
+  function renderStatus(s) {
+    const pills = $('pills'); pills.innerHTML = '';
+    const l = s.link || {}, f = l.feather;
+    if (s.dry_run) pills.append(pill('Test mode (no Feather)', 'warn'));
+    else if (!l.ok) pills.append(pill('Feather not answering', 'bad'));
+    else pills.append(pill('Feather connected', 'good'));
+    if (f) {
+      pills.append(pill(f.xbox_connected ? 'Xbox connected' : 'Xbox not connected', f.xbox_connected ? 'good' : 'warn'));
+      if (f.xbox_connected) pills.append(pill(f.xbox_authenticated ? 'Security check passed' : 'Waiting for security check',
+                                              f.xbox_authenticated ? 'good' : 'warn'));
+    }
+    const prof = { foot: 'On foot', vehicle: 'Driving', air: 'Flying' }[s.profile] || s.profile;
+    pills.append(pill(s.paused ? 'Paused' : prof, s.paused ? 'warn' : ''));
+    if (s.aiming) pills.append(pill('Aiming'));
+    const kinds = (s.devices || []).map(d => d.kind).join(', ');
+    pills.append(pill(kinds ? 'Inputs: ' + kinds : 'No keyboard or mouse found', kinds ? '' : 'bad'));
+    if (s.rate_hz) pills.append(pill(s.rate_hz + ' updates/s'));
+
+    const o = s.output || {};
+    const place = (id, x, y) => { $(id).querySelector('.dot').style.transform = `translate(${(x || 0) * 35}px, ${-(y || 0) * 35}px)`; };
+    place('ls', o.lx, o.ly); place('rs', o.rx, o.ry);
+    $('lt').style.width = ((o.lt || 0) * 100) + '%'; $('rt').style.width = ((o.rt || 0) * 100) + '%';
+    const b = $('btns'); b.innerHTML = '';
+    for (const n of o.buttons || []) b.append(el('span', { text: meta && meta.action_labels[n] || n }));
+    const msgs = (s.messages || []).slice(-2);
+    let line = msgs.join(' · ');
+    if (!s.dry_run && !l.ok && l.last_error) line = (line ? line + ' · ' : '') + 'Link: ' + l.last_error;
+    if (s.config_note) line = s.config_note + (line ? ' · ' + line : '');
+    $('msgs').textContent = line;
+
+    if (s.config_version && s.config_version !== version && saved) {
+      if (!dirty) loadConfig();
+      else { $('note').textContent = 'Settings changed on the Pi (F9/F10/F11). Press Undo to load them.'; }
+    }
+  }
+
+  async function poll() {
+    try { const r = await fetch('/api/status'); renderStatus(await r.json()); }
+    catch (e) { $('pills').innerHTML = ''; $('pills').append(pill('Pi not reachable', 'bad')); }
+    setTimeout(poll, 250);
+  }
+
+  $('addbind').addEventListener('click', () => {
+    const table = draft.bindings[tab];
+    const free = meta.keys.find(k => !table[k] && !k.startsWith('MOUSE_') && !k.startsWith('WHEEL_'));
+    table[free] = ['A']; renderBinds(); markDirty();
+  });
+
+  (async () => {
+    meta = await (await fetch('/api/meta')).json();
+    await loadConfig();
+    poll();
+  })();
+})();
+</script>
+</body>
+</html>
